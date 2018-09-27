@@ -156,7 +156,7 @@ namespace BusTracker
             {               
                 HideKeyboard();
 
-                // Once the input is filtered, visualization method is called in inside this method 
+                // Once the input is filtered, SetUpServerConnection method is called in inside this method 
                 InputFiltering();
                 e.Handled = true; 
             }
@@ -169,7 +169,7 @@ namespace BusTracker
             inputManager.HideSoftInputFromWindow(CurrentFocus.WindowToken, HideSoftInputFlags.None);
         }
 
-        // Establish server connection if a available bus is selected
+        // Establish server connection if any available bus is selected
         private void InputFiltering()
         {
             string busNum = autoCompleteTextView.Text;
