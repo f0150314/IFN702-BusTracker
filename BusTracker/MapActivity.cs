@@ -186,37 +186,32 @@ namespace BusTracker
  
         // Create server connection or modify existing subscription
         private void SetUpServerConnection(string busNum)                           
-        {            
-            if (busNum == "60" || busNum == "196" || busNum == "340")
+        {
+            // Check server connection
+            if (!client.IsConnected)
             {
-                // Check server connection               
-                if (!client.IsConnected)                                            
-                {
-                    // register to message received
-                    client.MqttMsgPublishReceived += client_MqttMsgPublishReceived;
-                    string clientId = Guid.NewGuid().ToString();
-                    client.Connect(clientId);
+                // register to message received
+                client.MqttMsgPublishReceived += client_MqttMsgPublishReceived;
+                string clientId = Guid.NewGuid().ToString();
+                client.Connect(clientId);
 
-                    // subscribe to the topic "Bus/busNum/#"
+                // subscribe to the topic "Bus/busNum/#"
+                client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
+                currentSub = busNum;
+            }
+            else // re-subscribe to new topic
+            {
+                if (busNum != currentSub)
+                {
+                    client.Unsubscribe(new string[] { $"Bus/{currentSub}/#" });
                     client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
                     currentSub = busNum;
-                }
-                else // re-subscribe to new topic
-                {
-                    if (busNum != currentSub)
-                    {
-                        client.Unsubscribe(new string[] { $"Bus/{currentSub}/#" });
-                        client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
-                        currentSub = busNum;
 
-                        // clear all markers that belongs to previous topic and clear the dictionary
-                        mMap.Clear();
-                        markerDepository.Clear();
-                    }
+                    // clear all markers that belongs to previous topic on the map and clear the dictionary that stores the markers of previous topic.
+                    mMap.Clear();
+                    markerDepository.Clear();
                 }
             }
-            else
-                Toast.MakeText(this, $"Bus {busNum}: Real-time info is not collected", ToastLength.Short).Show();
         }
 
         // Receive the published messages and print them out
