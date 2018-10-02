@@ -28,6 +28,8 @@ namespace BusTracker
         AutoCompleteTextView autoCompleteTextView;
         FusedLocationProviderClient fusedLocationProviderClient;
 
+        Location deviceLocation = new Location("deviceLocation");
+
         // Create MQTT client instance
         MqttClient client = new MqttClient(broker_address);
 
@@ -38,7 +40,7 @@ namespace BusTracker
         private float DEFAULT_ZOOM = 15f;
         private string currentSub = null;
         private static string broker_address = "203.101.226.126";
-        private string[] autoCompleteOptions;        
+        private string[] autoCompleteOptions;   
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
@@ -90,6 +92,7 @@ namespace BusTracker
             // Instantiate the location provider to obtain device location
             fusedLocationProviderClient = LocationServices.GetFusedLocationProviderClient(this);
             Location location = await fusedLocationProviderClient.GetLastLocationAsync();
+            deviceLocation = location;
 
             double lng;
             double lat;
@@ -177,7 +180,7 @@ namespace BusTracker
             // Identify if the input is correct 
             if (Array.Exists(autoCompleteOptions, option => option == busNum))
             { 
-                Toast.MakeText(this, "Bus ID = " + busNum, ToastLength.Short).Show();               
+                Toast.MakeText(this, "Bus ID = " + busNum, ToastLength.Short).Show();
                 SetUpServerConnection(busNum);               
             }
             else
@@ -234,16 +237,22 @@ namespace BusTracker
             double busLat = Convert.ToDouble(busInfoTokens[1]);
             double busLng = Convert.ToDouble(busInfoTokens[2]);
 
+            // Calculate the distance between current location and buses
+            Location busLocation = new Location("bus location");
+            busLocation.Latitude = busLat;
+            busLocation.Longitude = busLng;
+            int distance = (int)deviceLocation.DistanceTo(busLocation);
+
             // Periodically update buses' position by adding new and remo
             // Check whether the markers have already existed or not
             if (!markerDepository.ContainsKey(e.Topic))
             {
                 // Add to the map
                 busMarker = mMap.AddMarker(new MarkerOptions()
-                                .SetTitle(e.Topic)
+                                .SetTitle(e.Topic + ", Distance: " + distance + "m")
                                 .SetIcon(BitmapDescriptorFactory.FromResource(Resource.Drawable.bus))
                                 .SetPosition(new LatLng(busLat, busLng)));
-
+                
                 //Add to the dictionary 
                 markerDepository.Add(e.Topic, busMarker);
             }
@@ -255,9 +264,8 @@ namespace BusTracker
                 busMarker = markerDepository[e.Topic];
                 busMarker.Remove();
                 markerDepository.Remove(e.Topic);
-
                 busMarker = mMap.AddMarker(new MarkerOptions()
-                                .SetTitle(e.Topic)
+                                .SetTitle(e.Topic + ", Distance: " + distance + "m")
                                 .SetIcon(BitmapDescriptorFactory.FromResource(Resource.Drawable.bus))
                                 .SetPosition(new LatLng(busLat, busLng)));
                 markerDepository.Add(e.Topic, busMarker);
