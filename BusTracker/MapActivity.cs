@@ -15,6 +15,7 @@ using Android.Support.V4.App;
 using Android.Views.InputMethods;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
+using System.Linq;
 
 namespace BusTracker
 {
@@ -28,6 +29,7 @@ namespace BusTracker
         AutoCompleteTextView autoCompleteTextView;
         FusedLocationProviderClient fusedLocationProviderClient;
 
+        // Location instance for stroing device location
         Location deviceLocation = new Location("deviceLocation");
 
         // Create MQTT client instance
@@ -35,6 +37,9 @@ namespace BusTracker
 
         // Create dictionary to store markers for later removal
         Dictionary<string, Marker> markerDepository = new Dictionary<string, Marker>();
+
+        // Create dictionary to store bus shape 
+        Dictionary<string, List<List<double>>> busShape = new Dictionary<string, List<List<double>>>();
 
         // Global variables
         private float DEFAULT_ZOOM = 15f;
@@ -78,12 +83,16 @@ namespace BusTracker
             mGps = FindViewById<ImageView>(Resource.Id.gps);
             mGps.Click += GetSelfLocation;
 
+            // Pre-process shapes file for later ployline deployment
+            BusShapeCollection();
+
             // Initialize AutoCompleteAdapter and AutocompleteTextView
             autoCompleteOptions = CollectBusOptions();
             autoCompleteAdapter = new ArrayAdapter(this, Android.Resource.Layout.SimpleDropDownItem1Line, autoCompleteOptions);
             autoCompleteTextView = (AutoCompleteTextView)FindViewById(Resource.Id.input_search);
             autoCompleteTextView.Adapter = autoCompleteAdapter;
             autoCompleteTextView.EditorAction += AutoCompleteTextView_EditorAction;
+           
         }
 
         // Get current location
@@ -198,6 +207,8 @@ namespace BusTracker
                 string clientId = Guid.NewGuid().ToString();
                 client.Connect(clientId);
 
+                DrawPolyline(busShape, busNum);
+
                 // subscribe to the topic "Bus/busNum/#"
                 client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
                 currentSub = busNum;
@@ -207,12 +218,14 @@ namespace BusTracker
                 if (busNum != currentSub)
                 {
                     client.Unsubscribe(new string[] { $"Bus/{currentSub}/#" });
-                    client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
-                    currentSub = busNum;
 
                     // clear all markers that belongs to previous topic on the map and clear the dictionary that stores the markers of previous topic.
                     mMap.Clear();
                     markerDepository.Clear();
+
+                    DrawPolyline(busShape, busNum);
+                    client.Subscribe(new string[] { $"Bus/{busNum}/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
+                    currentSub = busNum;
                 }
             }
         }
@@ -269,6 +282,77 @@ namespace BusTracker
                                 .SetIcon(BitmapDescriptorFactory.FromResource(Resource.Drawable.bus))
                                 .SetPosition(new LatLng(busLat, busLng)));
                 markerDepository.Add(e.Topic, busMarker);
+            }
+        }
+
+        // Preprocess the shapes.txt file to get actual bus path
+        private void BusShapeCollection()
+        {            
+            List<List<double>> shapeCoordinates = new List<List<double>>();
+            Stream seedDataStream = Assets.Open("shapes.txt");           
+            
+            // Read the shape.txt file
+            using (StreamReader reader = new StreamReader(seedDataStream))
+            {
+                string line;
+                bool flag = true;
+                string shape_id = null;
+
+                while ((line = reader.ReadLine()) != null)
+                {
+                    // Prevent the first line of irrelevant text being stored
+                    if (flag)
+                        flag = false;
+                    // Processing and store only needed bus route number
+                    else
+                    {                      
+                        string[] lineToken = line.Split(',');
+                        
+                        if (lineToken[0] == shape_id)
+                        {
+                            shapeCoordinates[0].Add(Convert.ToDouble(lineToken[1]));
+                            shapeCoordinates[1].Add(Convert.ToDouble(lineToken[2]));
+                        }
+                        else
+                        {
+                            // prevent storing null shape_id into dictionary
+                            if (shape_id != null)
+                            {
+                                // Create new object for storing, otherwise the data will be removed when using .Clear() method
+                                List<List<double>> shapeCoordinateList = new List<List<double>>(shapeCoordinates);
+                                busShape.Add(shape_id, shapeCoordinateList);
+                                shapeCoordinates.Clear();
+                            }
+
+                            // A proper way to create 2D list
+                            shapeCoordinates.Add(new List<double>());
+                            shapeCoordinates[0].Add(Convert.ToDouble(lineToken[1]));
+                            shapeCoordinates.Add(new List<double>());
+                            shapeCoordinates[1].Add(Convert.ToDouble(lineToken[2]));
+                            shape_id = lineToken[0];
+                        }                      
+                    }
+                }
+            }
+        }
+
+        // Draw bus route
+        private void DrawPolyline(Dictionary<string, List<List<double>>> busShape, string busNum)
+        {
+            // Acquire needed shape_id
+            var keys = busShape.Keys.Where(key => key.StartsWith(busNum) && key.Length == busNum.Length + 4).ToArray();
+
+            // Add polylines for every shape_id
+            foreach (var key in keys)
+            {
+                List<List<double>> busLatLng = busShape[key];
+                PolylineOptions polyOptions = new PolylineOptions();
+                    
+                for (int i = 0; i < busLatLng[0].Count; i++)
+                {
+                    polyOptions.Add(new LatLng(busLatLng[0][i], busLatLng[1][i]));
+                }
+                mMap.AddPolyline(polyOptions);
             }
         }
     }
